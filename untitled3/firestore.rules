@@ -54,8 +54,16 @@ service cloud.firestore {
       allow create: if isAuthenticated() && isEngineer();
       allow update: if isAuthenticated() && (
         isEngineer() || 
-        (isOwner() && (request.auth.uid == resource.data.ownerId || request.auth.uid == resource.data.ownerUid)) ||
-        (isFieldManager() && (request.auth.uid == resource.data.managerId || request.auth.uid == resource.data.managerUid))
+        (isOwner() && (
+          request.auth.uid == resource.data.ownerId || 
+          request.auth.uid == resource.data.ownerUid ||
+          request.auth.uid == resource.data.ownerPublicId
+        )) ||
+        (isFieldManager() && (
+          request.auth.uid == resource.data.managerId || 
+          request.auth.uid == resource.data.managerUid ||
+          request.auth.uid == resource.data.managerPublicId
+        ))
       );
     }
     

@@ -67,7 +67,7 @@ class _ComprehensiveRatingScreenState extends State<ComprehensiveRatingScreen> {
       
       if (_engineer == null) {
         setState(() {
-          _errorMessage = 'Engineer not found for this project';
+          _errorMessage = 'Engineer not found for this project. Please ensure the project has an assigned engineer.';
           _isLoading = false;
         });
         return;
@@ -91,6 +91,7 @@ class _ComprehensiveRatingScreenState extends State<ComprehensiveRatingScreen> {
         _isLoading = false;
       });
     } catch (e) {
+      print('❌ Error loading engineer data: $e');
       setState(() {
         _errorMessage = 'Error loading engineer data: $e';
         _isLoading = false;

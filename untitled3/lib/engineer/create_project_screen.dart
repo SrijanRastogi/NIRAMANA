@@ -21,20 +21,15 @@ class _CreateProjectScreenState extends State<CreateProjectScreen> with LoadingS
   final _projectNameController = TextEditingController();
   final _ownerIdController = TextEditingController();
   final _managerIdController = TextEditingController();
-  final _purchaseManagerIdController = TextEditingController();
 
   UserData? _selectedOwner;
   UserData? _selectedManager;
-  UserData? _selectedPurchaseManager;
   bool _isValidatingOwner = false;
   bool _isValidatingManager = false;
-  bool _isValidatingPurchaseManager = false;
   String? _ownerValidationError;
   String? _managerValidationError;
-  String? _purchaseManagerValidationError;
   Timer? _ownerDebounceTimer;
   Timer? _managerDebounceTimer;
-  Timer? _purchaseManagerDebounceTimer;
 
   static const Color primary = Color(0xFF136DEC);
   static const Color accent = Color(0xFF7A5AF8);
@@ -50,10 +45,8 @@ class _CreateProjectScreenState extends State<CreateProjectScreen> with LoadingS
     _projectNameController.dispose();
     _ownerIdController.dispose();
     _managerIdController.dispose();
-    _purchaseManagerIdController.dispose();
     _ownerDebounceTimer?.cancel();
     _managerDebounceTimer?.cancel();
-    _purchaseManagerDebounceTimer?.cancel();
     super.dispose();
   }
 
@@ -190,17 +183,6 @@ class _CreateProjectScreenState extends State<CreateProjectScreen> with LoadingS
                                     validationError: _managerValidationError,
                                     onChanged: _validateManagerId,
                                   ),
-                                  const SizedBox(height: 16),
-
-                                  // Purchase Manager ID Input
-                                  _buildIdInputField(
-                                    label: 'Purchase Manager ID',
-                                    controller: _purchaseManagerIdController,
-                                    icon: Icons.shopping_cart,
-                                    isValidating: _isValidatingPurchaseManager,
-                                    validationError: _purchaseManagerValidationError,
-                                    onChanged: _validatePurchaseManagerId,
-                                  ),
                                   const SizedBox(height: 24),
 
                                   // Info Note
@@ -269,13 +251,10 @@ class _CreateProjectScreenState extends State<CreateProjectScreen> with LoadingS
   bool _canCreateProject() {
     return _selectedOwner != null && 
            _selectedManager != null && 
-           _selectedPurchaseManager != null &&
            !_isValidatingOwner && 
            !_isValidatingManager &&
-           !_isValidatingPurchaseManager &&
            _ownerValidationError == null &&
-           _managerValidationError == null &&
-           _purchaseManagerValidationError == null;
+           _managerValidationError == null;
   }
 
   Future<void> _createProject() async {
@@ -297,7 +276,6 @@ class _CreateProjectScreenState extends State<CreateProjectScreen> with LoadingS
         print('🔐 CREATE PROJECT - Engineer UID: $currentUserId');
         print('👤 CREATE PROJECT - Selected Owner: ${_selectedOwner!.fullName} (${_selectedOwner!.uid})');
         print('👤 CREATE PROJECT - Selected Manager: ${_selectedManager!.fullName} (${_selectedManager!.uid})');
-        print('👤 CREATE PROJECT - Selected Purchase Manager: ${_selectedPurchaseManager!.fullName} (${_selectedPurchaseManager!.uid})');
 
         final project = ProjectModel(
           id: '', // Will be set by Firestore
@@ -305,15 +283,15 @@ class _CreateProjectScreenState extends State<CreateProjectScreen> with LoadingS
           createdBy: currentUserId,
           ownerId: _selectedOwner!.publicId ?? _selectedOwner!.uid, 
           managerId: _selectedManager!.publicId ?? _selectedManager!.uid,
-          purchaseManagerId: _selectedPurchaseManager!.publicId ?? _selectedPurchaseManager!.uid,
+          purchaseManagerId: '', // Will be assigned later by owner
           status: 'pending_owner_approval',
           createdAt: DateTime.now(),
           ownerUid: _selectedOwner!.uid, 
           managerUid: _selectedManager!.uid, 
-          purchaseManagerUid: _selectedPurchaseManager!.uid,
+          purchaseManagerUid: '', // Will be assigned later by owner
           ownerName: _selectedOwner!.fullName, 
           managerName: _selectedManager!.fullName, 
-          purchaseManagerName: _selectedPurchaseManager!.fullName,
+          purchaseManagerName: '', // Will be assigned later by owner
         );
 
         final projectId = await FirestoreService.createProject(project);
@@ -466,69 +444,6 @@ class _CreateProjectScreenState extends State<CreateProjectScreen> with LoadingS
           _isValidatingManager = false;
         });
         print('❌ Manager validation error: $e');
-      }
-    }
-  }
-
-  /// Validate Purchase Manager ID by checking Firestore (with debouncing)
-  void _validatePurchaseManagerId(String pmId) {
-    _purchaseManagerDebounceTimer?.cancel();
-    
-    if (pmId.trim().isEmpty) {
-      setState(() {
-        _selectedPurchaseManager = null;
-        _purchaseManagerValidationError = null;
-        _isValidatingPurchaseManager = false;
-      });
-      return;
-    }
-
-    _purchaseManagerDebounceTimer = Timer(const Duration(milliseconds: 500), () {
-      _performPurchaseManagerValidation(pmId.trim());
-    });
-  }
-
-  /// Perform actual purchase manager validation
-  Future<void> _performPurchaseManagerValidation(String pmId) async {
-    setState(() {
-      _isValidatingPurchaseManager = true;
-      _purchaseManagerValidationError = null;
-    });
-
-    print('🔍 Validating Purchase Manager ID: $pmId');
-
-    try {
-      final validation = await UserService.validateSingleUser(
-        publicId: pmId,
-        expectedRole: 'purchaseManager',
-      );
-
-      if (mounted) {
-        if (validation['success']) {
-          final pm = validation['user'] as UserData;
-          setState(() {
-            _selectedPurchaseManager = pm;
-            _purchaseManagerValidationError = null;
-            _isValidatingPurchaseManager = false;
-          });
-          print('✅ Purchase Manager validated: ${pm.fullName} (${pm.uid})');
-        } else {
-          setState(() {
-            _selectedPurchaseManager = null;
-            _purchaseManagerValidationError = validation['error'];
-            _isValidatingPurchaseManager = false;
-          });
-          print('❌ Purchase Manager validation failed: ${validation['error']}');
-        }
-      }
-    } catch (e) {
-      if (mounted) {
-        setState(() {
-          _selectedPurchaseManager = null;
-          _purchaseManagerValidationError = 'Validation failed: ${e.toString()}';
-          _isValidatingPurchaseManager = false;
-        });
-        print('❌ Purchase Manager validation error: $e');
       }
     }
   }

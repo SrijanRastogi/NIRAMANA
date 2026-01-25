@@ -16,6 +16,8 @@ class ProjectService {
     required String projectName,
     required String ownerId,
     required String managerId,
+    String? ownerUid,
+    String? managerUid,
   }) async {
     if (currentUserId == null) {
       throw Exception('User not authenticated');
@@ -29,6 +31,8 @@ class ProjectService {
       managerId: managerId,
       status: 'pending_owner_approval',
       createdAt: DateTime.now(),
+      ownerUid: ownerUid ?? ownerId, // Use ownerUid if provided, otherwise use ownerId
+      managerUid: managerUid ?? managerId, // Use managerUid if provided, otherwise use managerId
     );
 
     final docRef = await _firestore
@@ -66,7 +70,7 @@ class ProjectService {
 
     return _firestore
         .collection('projects')
-        .where('ownerId', isEqualTo: currentUserId)
+        .where('ownerUid', isEqualTo: currentUserId)
         .orderBy('createdAt', descending: true)
         .snapshots()
         .map((snapshot) {
@@ -89,7 +93,7 @@ class ProjectService {
 
     return _firestore
         .collection('projects')
-        .where('managerId', isEqualTo: currentUserId)
+        .where('managerUid', isEqualTo: currentUserId)
         .orderBy('createdAt', descending: true)
         .snapshots()
         .map((snapshot) {
@@ -111,15 +115,15 @@ class ProjectService {
     print('DEBUG → Logged-in UID: $uid');
     print('DEBUG → Project ID: $projectId');
 
-    // DEBUG: Create payload variable to inspect
+    // ✅ ROLE-SAFE OWNER UPDATE - ONLY owner fields
     final payload = {
       'ownerApproved': true,
       'ownerApprovedAt': FieldValue.serverTimestamp(),
-      'managerAcceptedAt': null,
       'status': 'Owner Approved',
       'updatedAt': FieldValue.serverTimestamp(),
     };
-    print('DEBUG → Payload keys: ${payload.keys}');
+    print('DEBUG → Owner Update Payload Keys: ${payload.keys.toList()}');
+    print('DEBUG → Payload contains managerAcceptedAt: ${payload.containsKey('managerAcceptedAt')}');
 
     await FirebaseFirestore.instance
         .collection('projects')

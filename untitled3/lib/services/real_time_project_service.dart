@@ -29,7 +29,7 @@ class RealTimeProjectService {
     
     return _firestore
         .collection('projects')
-        .where('managerId', isEqualTo: currentUserId)
+        .where('managerUid', isEqualTo: currentUserId)
         .orderBy('createdAt', descending: true)
         .snapshots()
         .map((snapshot) => snapshot.docs
@@ -43,7 +43,7 @@ class RealTimeProjectService {
     
     return _firestore
         .collection('projects')
-        .where('ownerId', isEqualTo: currentUserId)
+        .where('ownerUid', isEqualTo: currentUserId)
         .orderBy('createdAt', descending: true)
         .snapshots()
         .map((snapshot) => snapshot.docs

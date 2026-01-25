@@ -6,12 +6,14 @@ class Project {
   final String id;
   final String projectName;
   final String createdBy; // Engineer UID
-  final String ownerId; // Owner UID
-  final String managerId; // Manager UID
+  final String ownerId; // Owner UID (Firebase Auth UID)
+  final String managerId; // Manager UID (Firebase Auth UID)
   final String status; // pending_owner_approval, pending_manager_acceptance, active
   final DateTime createdAt;
   final DateTime? ownerApprovedAt;
   final DateTime? managerAcceptedAt;
+  final String? ownerUid; // Owner's Firebase Auth UID (for Firestore rules)
+  final String? managerUid; // Manager's Firebase Auth UID (for Firestore rules)
 
   const Project({
     required this.id,
@@ -23,6 +25,8 @@ class Project {
     required this.createdAt,
     this.ownerApprovedAt,
     this.managerAcceptedAt,
+    this.ownerUid,
+    this.managerUid,
   });
 
   /// Create Project from Firestore document
@@ -38,6 +42,8 @@ class Project {
       createdAt: (data['createdAt'] as Timestamp?)?.toDate() ?? DateTime.now(),
       ownerApprovedAt: (data['ownerApprovedAt'] as Timestamp?)?.toDate(),
       managerAcceptedAt: (data['managerAcceptedAt'] as Timestamp?)?.toDate(),
+      ownerUid: data['ownerUid'],
+      managerUid: data['managerUid'],
     );
   }
 
@@ -54,6 +60,8 @@ class Project {
         'ownerApprovedAt': Timestamp.fromDate(ownerApprovedAt!),
       if (managerAcceptedAt != null)
         'managerAcceptedAt': Timestamp.fromDate(managerAcceptedAt!),
+      if (ownerUid != null) 'ownerUid': ownerUid,
+      if (managerUid != null) 'managerUid': managerUid,
     };
   }
 
@@ -68,6 +76,8 @@ class Project {
     DateTime? createdAt,
     DateTime? ownerApprovedAt,
     DateTime? managerAcceptedAt,
+    String? ownerUid,
+    String? managerUid,
   }) {
     return Project(
       id: id ?? this.id,
@@ -79,6 +89,8 @@ class Project {
       createdAt: createdAt ?? this.createdAt,
       ownerApprovedAt: ownerApprovedAt ?? this.ownerApprovedAt,
       managerAcceptedAt: managerAcceptedAt ?? this.managerAcceptedAt,
+      ownerUid: ownerUid ?? this.ownerUid,
+      managerUid: managerUid ?? this.managerUid,
     );
   }
 

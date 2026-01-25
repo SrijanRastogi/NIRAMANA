@@ -50,12 +50,21 @@ class ComprehensiveRatingService {
       final projectDoc = await _firestore.collection('projects').doc(projectId).get();
       if (!projectDoc.exists) return null;
 
-      final project = ProjectModel.fromFirestore(projectDoc);
-      if (project.createdBy.isEmpty) return null;
+      final data = projectDoc.data() as Map<String, dynamic>;
+      
+      // Try to get engineer UID from multiple possible fields
+      String? engineerUid = data['engineerId'] as String?;
+      if (engineerUid == null || engineerUid.isEmpty) {
+        engineerUid = data['createdBy'] as String?;
+      }
+      
+      if (engineerUid == null || engineerUid.isEmpty) {
+        return null;
+      }
 
       final engineerDoc = await _firestore
           .collection('users')
-          .doc(project.createdBy)
+          .doc(engineerUid)
           .get();
 
       if (engineerDoc.exists) {
@@ -63,6 +72,7 @@ class ComprehensiveRatingService {
       }
       return null;
     } catch (e) {
+      print('❌ Error fetching project engineer: $e');
       return null;
     }
   }
