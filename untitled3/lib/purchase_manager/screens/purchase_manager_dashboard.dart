@@ -1,13 +1,14 @@
 import 'package:flutter/material.dart';
 import 'dart:ui' as ui;
-import 'package:firebase_auth/firebase_auth.dart';
-import 'package:cloud_firestore/cloud_firestore.dart';
-import '../../common/models/project_model.dart';
-import '../../services/auth_service.dart';
-import 'pending_mrs_screen.dart';
-import 'project_pos_screen.dart';
-import 'project_bills_screen.dart';
+import '../../models/material_request_model.dart';
+import '../../models/purchase_order_model.dart';
+import '../../services/procurement_service.dart';
+import '../../common/project_context.dart';
+import 'package:intl/intl.dart';
+import 'create_po_screen.dart';
+import 'po_details_screen.dart';
 
+/// Purchase Manager Dashboard - Complete PO workflow management
 class PurchaseManagerDashboard extends StatefulWidget {
   const PurchaseManagerDashboard({super.key});
 
@@ -15,290 +16,306 @@ class PurchaseManagerDashboard extends StatefulWidget {
   State<PurchaseManagerDashboard> createState() => _PurchaseManagerDashboardState();
 }
 
-class _PurchaseManagerDashboardState extends State<PurchaseManagerDashboard> {
-  static const Color primary = Color(0xFF136DEC);
-  static const Color accent = Color(0xFF7A5AF8);
+class _PurchaseManagerDashboardState extends State<PurchaseManagerDashboard>
+    with SingleTickerProviderStateMixin {
+  late TabController _tabController;
 
-  Widget _buildStatsSummary(String? uid) {
-    if (uid == null) return const SizedBox.shrink();
+  @override
+  void initState() {
+    super.initState();
+    _tabController = TabController(length: 3, vsync: this);
+  }
 
-    // Note: Stats should be calculated from assigned projects, not top-level collection
-    // This is a placeholder - proper implementation would aggregate from all assigned projects
-    return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-      child: Row(
+  @override
+  void dispose() {
+    _tabController.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final projectId = ProjectContext.activeProjectId;
+    if (projectId == null) {
+      return Scaffold(
+        appBar: AppBar(title: const Text('Purchase Manager')),
+        body: const Center(child: Text('Please select a project first')),
+      );
+    }
+
+    return Scaffold(
+      appBar: AppBar(
+        title: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Text('Purchase Manager'),
+            Text(
+              ProjectContext.activeProjectName ?? 'Project',
+              style: const TextStyle(fontSize: 12, fontWeight: FontWeight.normal),
+            ),
+          ],
+        ),
+        backgroundColor: const Color(0xFF136DEC),
+        foregroundColor: Colors.white,
+        bottom: TabBar(
+          controller: _tabController,
+          tabs: const [
+            Tab(text: 'Pending MRs', icon: Icon(Icons.pending_actions_outlined)),
+            Tab(text: 'Active POs', icon: Icon(Icons.receipt_outlined)),
+            Tab(text: 'Completed', icon: Icon(Icons.check_circle_outline)),
+          ],
+          labelColor: Colors.white,
+          unselectedLabelColor: Colors.white70,
+          indicatorColor: Colors.white,
+        ),
+      ),
+      body: TabBarView(
+        controller: _tabController,
         children: [
-          _buildStatCard("Assigned Projects", "0", Icons.folder, Colors.blue),
-          const SizedBox(width: 12),
-          _buildStatCard("Pending MRs", "0", Icons.pending_actions, Colors.orange),
+          _buildPendingMRsTab(projectId),
+          _buildActivePOsTab(projectId),
+          _buildCompletedPOsTab(projectId),
         ],
       ),
     );
   }
 
-  Widget _buildStatCard(String label, String value, IconData icon, Color color) {
-    return Expanded(
-      child: Container(
-        padding: const EdgeInsets.all(16),
-        decoration: BoxDecoration(
-          color: Colors.white,
-          borderRadius: BorderRadius.circular(16),
-          boxShadow: [
-            BoxShadow(color: Colors.black.withValues(alpha: 0.05), blurRadius: 10, offset: const Offset(0, 4)),
-          ],
-        ),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Icon(icon, color: color, size: 24),
-            const SizedBox(height: 12),
-            Text(value, style: const TextStyle(fontSize: 20, fontWeight: FontWeight.bold)),
-            Text(label, style: const TextStyle(color: Colors.grey, fontSize: 12)),
-          ],
-        ),
-      ),
+  Widget _buildPendingMRsTab(String projectId) {
+    return StreamBuilder<List<MaterialRequestModel>>(
+      stream: ProcurementService.getOwnerApprovedMRs(projectId),
+      builder: (context, snapshot) {
+        if (snapshot.connectionState == ConnectionState.waiting) {
+          return const Center(child: CircularProgressIndicator());
+        }
+        if (snapshot.hasError) {
+          return Center(child: Text('Error: ${snapshot.error}'));
+        }
+
+        final mrs = snapshot.data ?? [];
+        if (mrs.isEmpty) {
+          return Center(
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Icon(Icons.inbox_outlined, size: 64, color: Colors.grey[400]),
+                const SizedBox(height: 16),
+                const Text('No pending Material Requests'),
+                const SizedBox(height: 8),
+                const Text(
+                  'Waiting for Owner approval',
+                  style: TextStyle(color: Colors.grey),
+                ),
+              ],
+            ),
+          );
+        }
+
+        return ListView.builder(
+          padding: const EdgeInsets.all(16),
+          itemCount: mrs.length,
+          itemBuilder: (context, index) => _buildMRCard(context, mrs[index]),
+        );
+      },
     );
   }
 
-  @override
-  Widget build(BuildContext context) {
-    final user = FirebaseAuth.instance.currentUser;
-    
-    return Scaffold(
-      body: Stack(
-        children: [
-          // Background gradient
-          Container(
+  Widget _buildActivePOsTab(String projectId) {
+    return StreamBuilder<List<PurchaseOrderModel>>(
+      stream: ProcurementService.getProjectPOs(projectId),
+      builder: (context, snapshot) {
+        if (snapshot.connectionState == ConnectionState.waiting) {
+          return const Center(child: CircularProgressIndicator());
+        }
+        if (snapshot.hasError) {
+          return Center(child: Text('Error: ${snapshot.error}'));
+        }
+
+        final pos = snapshot.data ?? [];
+        final activePOs = pos.where((po) => po.status == 'PO_CREATED').toList();
+
+        if (activePOs.isEmpty) {
+          return Center(
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Icon(Icons.receipt_outlined, size: 64, color: Colors.grey[400]),
+                const SizedBox(height: 16),
+                const Text('No active Purchase Orders'),
+              ],
+            ),
+          );
+        }
+
+        return ListView.builder(
+          padding: const EdgeInsets.all(16),
+          itemCount: activePOs.length,
+          itemBuilder: (context, index) => _buildPOCard(context, activePOs[index]),
+        );
+      },
+    );
+  }
+
+  Widget _buildCompletedPOsTab(String projectId) {
+    return StreamBuilder<List<PurchaseOrderModel>>(
+      stream: ProcurementService.getProjectPOs(projectId),
+      builder: (context, snapshot) {
+        if (snapshot.connectionState == ConnectionState.waiting) {
+          return const Center(child: CircularProgressIndicator());
+        }
+
+        final pos = snapshot.data ?? [];
+        final completedPOs = pos.where((po) => po.status == 'GRN_CONFIRMED').toList();
+
+        if (completedPOs.isEmpty) {
+          return Center(
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Icon(Icons.check_circle_outline, size: 64, color: Colors.grey[400]),
+                const SizedBox(height: 16),
+                const Text('No completed Purchase Orders'),
+              ],
+            ),
+          );
+        }
+
+        return ListView.builder(
+          padding: const EdgeInsets.all(16),
+          itemCount: completedPOs.length,
+          itemBuilder: (context, index) => _buildPOCard(context, completedPOs[index]),
+        );
+      },
+    );
+  }
+
+  Widget _buildMRCard(BuildContext context, MaterialRequestModel mr) {
+    return Container(
+      margin: const EdgeInsets.only(bottom: 12),
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(12),
+        child: BackdropFilter(
+          filter: ui.ImageFilter.blur(sigmaX: 10, sigmaY: 10),
+          child: Container(
             decoration: BoxDecoration(
-              gradient: LinearGradient(
-                begin: Alignment.topLeft,
-                end: Alignment.bottomRight,
-                colors: [
-                  primary.withValues(alpha: 0.12),
-                  accent.withValues(alpha: 0.10),
-                  Colors.white,
+              color: Colors.white.withValues(alpha: 0.9),
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(color: Colors.white.withValues(alpha: 0.5)),
+              boxShadow: [
+                BoxShadow(
+                  color: Colors.black.withValues(alpha: 0.05),
+                  blurRadius: 8,
+                  offset: const Offset(0, 2),
+                ),
+              ],
+            ),
+            child: ListTile(
+              contentPadding: const EdgeInsets.all(16),
+              leading: Container(
+                width: 50,
+                height: 50,
+                decoration: BoxDecoration(
+                  color: Colors.blue.withValues(alpha: 0.1),
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: const Icon(Icons.pending_actions, color: Colors.blue),
+              ),
+              title: Text(
+                'MR ID: ${mr.id.substring(0, 8)}',
+                style: const TextStyle(fontWeight: FontWeight.bold),
+              ),
+              subtitle: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const SizedBox(height: 4),
+                  Text('${mr.materials.length} items • Priority: ${mr.priority}'),
+                  Text(
+                    'Needed by: ${DateFormat('dd MMM yyyy').format(mr.neededBy)}',
+                    style: const TextStyle(fontSize: 12),
+                  ),
                 ],
-                stops: const [0.0, 0.45, 1.0],
+              ),
+              trailing: ElevatedButton.icon(
+                onPressed: () {
+                  Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                      builder: (_) => CreatePOScreen(mr: mr),
+                    ),
+                  );
+                },
+                icon: const Icon(Icons.add, size: 18),
+                label: const Text('Create PO'),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: const Color(0xFF136DEC),
+                  foregroundColor: Colors.white,
+                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                ),
               ),
             ),
           ),
-
-          SafeArea(
-            child: Column(
-              children: [
-                // Header
-                Padding(
-                  padding: const EdgeInsets.fromLTRB(16, 8, 16, 12),
-                  child: ClipRRect(
-                    borderRadius: BorderRadius.circular(18),
-                    child: BackdropFilter(
-                      filter: ui.ImageFilter.blur(sigmaX: 18, sigmaY: 18),
-                      child: Container(
-                        decoration: BoxDecoration(
-                          color: Colors.white.withValues(alpha: 0.55),
-                          borderRadius: BorderRadius.circular(18),
-                          border: Border.all(color: Colors.white.withValues(alpha: 0.45), width: 1.1),
-                          boxShadow: [
-                            BoxShadow(color: Colors.black.withValues(alpha: 0.06), blurRadius: 16, offset: const Offset(0, 8)),
-                          ],
-                        ),
-                        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
-                        child: Row(
-                          children: [
-                            Expanded(
-                              child: Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  Text('Hi, Purchase Manager 📦', 
-                                    style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w800, color: Color(0xFF1F1F1F))),
-                                  const SizedBox(height: 4),
-                                  const Text("Procurement Control Center", style: TextStyle(color: Color(0xFF5C5C5C))),
-                                ],
-                              ),
-                            ),
-                            IconButton(
-                              onPressed: () => AuthService().logout(),
-                              icon: const Icon(Icons.logout, color: Color(0xFF5C5C5C)),
-                            ),
-                          ],
-                        ),
-                      ),
-                    ),
-                  ),
-                ),
-
-                // Stats Summary
-                _buildStatsSummary(user?.uid),
-
-                // Content
-                Expanded(
-                  child: StreamBuilder<QuerySnapshot>(
-                    stream: FirebaseFirestore.instance
-                        .collection('projects')
-                        .where('purchaseManagerUid', isEqualTo: user?.uid)
-                        .snapshots(),
-                    builder: (context, snapshot) {
-                      if (snapshot.connectionState == ConnectionState.waiting) {
-                        return const Center(child: CircularProgressIndicator());
-                      }
-
-                      if (snapshot.hasError) {
-                        return Center(child: Text('Error: ${snapshot.error}'));
-                      }
-
-                      final docs = snapshot.data?.docs ?? [];
-                      if (docs.isEmpty) {
-                        return const Center(
-                          child: Column(
-                            mainAxisAlignment: MainAxisAlignment.center,
-                            children: [
-                              Icon(Icons.assignment_late, size: 64, color: Colors.grey),
-                              SizedBox(height: 16),
-                              Text("No projects assigned to you yet", 
-                                style: TextStyle(fontSize: 16, color: Colors.grey)),
-                            ],
-                          ),
-                        );
-                      }
-
-                      return ListView.builder(
-                        padding: const EdgeInsets.all(16),
-                        itemCount: docs.length,
-                        itemBuilder: (context, index) {
-                          final project = ProjectModel.fromFirestore(docs[index]);
-                          return _ProjectProcurementCard(project: project);
-                        },
-                      );
-                    },
-                  ),
-                ),
-              ],
-            ),
-          ),
-        ],
+        ),
       ),
     );
   }
-}
 
-class _ProjectProcurementCard extends StatelessWidget {
-  final ProjectModel project;
-  const _ProjectProcurementCard({required this.project});
-
-  @override
-  Widget build(BuildContext context) {
-    return Card(
-      margin: const EdgeInsets.only(bottom: 16),
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-      elevation: 4,
-      child: Padding(
-        padding: const EdgeInsets.all(16),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: [
-                Expanded(
-                  child: Text(project.projectName, 
-                    style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+  Widget _buildPOCard(BuildContext context, PurchaseOrderModel po) {
+    return Container(
+      margin: const EdgeInsets.only(bottom: 12),
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(12),
+        child: BackdropFilter(
+          filter: ui.ImageFilter.blur(sigmaX: 10, sigmaY: 10),
+          child: Container(
+            decoration: BoxDecoration(
+              color: Colors.white.withValues(alpha: 0.9),
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(color: Colors.white.withValues(alpha: 0.5)),
+              boxShadow: [
+                BoxShadow(
+                  color: Colors.black.withValues(alpha: 0.05),
+                  blurRadius: 8,
+                  offset: const Offset(0, 2),
                 ),
-                Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
-                  decoration: BoxDecoration(
-                    color: project.isActive ? Colors.green.withValues(alpha: 0.1) : Colors.orange.withValues(alpha: 0.1),
-                    borderRadius: BorderRadius.circular(20),
+              ],
+            ),
+            child: ListTile(
+              contentPadding: const EdgeInsets.all(16),
+              leading: Container(
+                width: 50,
+                height: 50,
+                decoration: BoxDecoration(
+                  color: Colors.purple.withValues(alpha: 0.1),
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: const Icon(Icons.receipt, color: Colors.purple),
+              ),
+              title: Text(
+                po.poNumber ?? 'PO ID: ${po.id.substring(0, 8)}',
+                style: const TextStyle(fontWeight: FontWeight.bold),
+              ),
+              subtitle: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const SizedBox(height: 4),
+                  Text(po.vendorName),
+                  Text(
+                    '₹ ${po.totalAmount.toStringAsFixed(2)} • ${po.items.length} items',
+                    style: const TextStyle(fontSize: 12),
                   ),
-                  child: Text(project.statusDisplayText, 
-                    style: TextStyle(
-                      color: project.isActive ? Colors.green : Colors.orange,
-                      fontWeight: FontWeight.bold,
-                      fontSize: 12,
-                    )),
-                ),
-              ],
-            ),
-            const SizedBox(height: 16),
-            const Text("Pending Material Requests", 
-              style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600, color: Colors.grey)),
-            const SizedBox(height: 8),
-            
-            // Pending Material Requests for this project
-            StreamBuilder<QuerySnapshot>(
-              stream: FirebaseFirestore.instance
-                  .collection('projects')
-                  .doc(project.id)
-                  .collection('materialRequests')
-                  .where('status', isEqualTo: 'OWNER_APPROVED')
-                  .snapshots(),
-              builder: (context, snapshot) {
-                final count = snapshot.data?.docs.length ?? 0;
-                return Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                  children: [
-                    Text("$count Requests ready for PO", 
-                      style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w500)),
-                    ElevatedButton(
-                      onPressed: count > 0 ? () {
-                        Navigator.push(
-                          context,
-                          MaterialPageRoute(
-                            builder: (context) => PendingMRsScreen(project: project),
-                          ),
-                        );
-                      } : null,
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: const Color(0xFF136DEC),
-                        foregroundColor: Colors.white,
-                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
-                      ),
-                      child: const Text("View MRs"),
+                ],
+              ),
+              trailing: IconButton(
+                onPressed: () {
+                  Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                      builder: (_) => PODetailsScreen(po: po),
                     ),
-                  ],
-                );
-              },
+                  );
+                },
+                icon: const Icon(Icons.arrow_forward_ios, size: 18),
+              ),
             ),
-            const Divider(height: 24),
-            Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: [
-                const Text("Purchase Orders", 
-                  style: TextStyle(fontSize: 16, fontWeight: FontWeight.w500)),
-                TextButton.icon(
-                  onPressed: () {
-                    Navigator.push(
-                      context,
-                      MaterialPageRoute(
-                        builder: (context) => ProjectPOsScreen(project: project),
-                      ),
-                    );
-                  },
-                  icon: const Icon(Icons.list_alt, color: Color(0xFF136DEC)),
-                  label: const Text("View All POs", style: TextStyle(color: Color(0xFF136DEC))),
-                ),
-              ],
-            ),
-            const Divider(height: 24),
-            Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: [
-                const Text("GST Bills", 
-                  style: TextStyle(fontSize: 16, fontWeight: FontWeight.w500)),
-                TextButton.icon(
-                  onPressed: () {
-                    Navigator.push(
-                      context,
-                      MaterialPageRoute(
-                        builder: (context) => ProjectBillsScreen(project: project),
-                      ),
-                    );
-                  },
-                  icon: const Icon(Icons.receipt_long, color: Color(0xFF136DEC)),
-                  label: const Text("View All Bills", style: TextStyle(color: Color(0xFF136DEC))),
-                ),
-              ],
-            ),
-          ],
+          ),
         ),
       ),
     );

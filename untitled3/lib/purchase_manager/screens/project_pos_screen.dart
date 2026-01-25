@@ -56,7 +56,7 @@ class ProjectPOsScreen extends StatelessWidget {
                     Navigator.push(
                       context,
                       MaterialPageRoute(
-                        builder: (context) => PODetailsScreen(po: po, project: project),
+                        builder: (context) => PODetailsScreen(po: po),
                       ),
                     );
                   },

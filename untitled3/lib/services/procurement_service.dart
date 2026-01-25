@@ -167,6 +167,34 @@ class ProcurementService {
         .doc(projectId)
         .collection('materialRequests')
         .where('status', isEqualTo: 'OWNER_APPROVED')
+        .orderBy('neededBy', descending: false)
+        .orderBy('createdAt', descending: true)
+        .snapshots()
+        .map((snapshot) => snapshot.docs
+            .map((doc) => MaterialRequestModel.fromFirestore(doc))
+            .toList());
+  }
+
+  /// Get all MRs for a project (for field manager to track)
+  static Stream<List<MaterialRequestModel>> getProjectMRs(String projectId) {
+    return _firestore
+        .collection('projects')
+        .doc(projectId)
+        .collection('materialRequests')
+        .orderBy('createdAt', descending: true)
+        .snapshots()
+        .map((snapshot) => snapshot.docs
+            .map((doc) => MaterialRequestModel.fromFirestore(doc))
+            .toList());
+  }
+
+  /// Get MRs by status for a project
+  static Stream<List<MaterialRequestModel>> getMRsByStatus(String projectId, String status) {
+    return _firestore
+        .collection('projects')
+        .doc(projectId)
+        .collection('materialRequests')
+        .where('status', isEqualTo: status)
         .orderBy('createdAt', descending: true)
         .snapshots()
         .map((snapshot) => snapshot.docs
@@ -505,6 +533,20 @@ class ProcurementService {
         .snapshots()
         .map((snapshot) => snapshot.docs
             .map((doc) => MaterialRequestModel.fromFirestore(doc))
+            .toList());
+  }
+
+  /// Get Purchase Orders by status
+  static Stream<List<PurchaseOrderModel>> getPOsByStatus(String projectId, String status) {
+    return _firestore
+        .collection('projects')
+        .doc(projectId)
+        .collection('purchaseOrders')
+        .where('status', isEqualTo: status)
+        .orderBy('createdAt', descending: true)
+        .snapshots()
+        .map((snapshot) => snapshot.docs
+            .map((doc) => PurchaseOrderModel.fromFirestore(doc))
             .toList());
   }
 }

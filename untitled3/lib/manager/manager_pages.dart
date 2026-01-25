@@ -17,6 +17,7 @@ import '../models/dpr_model.dart';
 import '../common/models/project_model.dart';
 import '../common/project_context.dart';
 import '../common/widgets/public_id_display.dart';
+import '../common/screens/inventory_management_screen.dart';
 import 'manager.dart';
 import 'manager_project_card.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
@@ -24,6 +25,7 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:image_picker/image_picker.dart';
 
 import 'screens/enhanced_mr_screen.dart';
+import 'screens/material_request_tracking_screen.dart';
 import 'screens/grn_creation_screen.dart';
 import 'screens/worker_management_screen.dart';
 import 'screens/face_scan_attendance_screen.dart';
@@ -468,6 +470,16 @@ class ManagerHomeScreen extends StatelessWidget {
                           },
                         ),
                         _FeatureCard(
+                          title: 'Inventory Management',
+                          icon: Icons.warehouse_outlined,
+                          onTap: () {
+                            Navigator.push(
+                              context,
+                              MaterialPageRoute(builder: (_) => const InventoryManagementScreen()),
+                            );
+                          },
+                        ),
+                        _FeatureCard(
                           title: 'Attendance',
                           icon: Icons.how_to_reg_rounded,
                           onTap: () {
@@ -804,6 +816,17 @@ class MaterialsScreen extends StatelessWidget {
                   Navigator.push(
                     context,
                     MaterialPageRoute(builder: (_) => const EnhancedMRScreen()),
+                  );
+                },
+              ),
+              const SizedBox(height: 12),
+              _GlassButton(
+                icon: Icons.track_changes_rounded,
+                label: 'Track Requests',
+                onTap: () {
+                  Navigator.push(
+                    context,
+                    MaterialPageRoute(builder: (_) => const MaterialRequestTrackingScreen()),
                   );
                 },
               ),

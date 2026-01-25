@@ -3,11 +3,10 @@ import 'package:flutter/services.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'dart:ui' as ui;
-import '../../services/floor_cash_estimation_service.dart';
 import '../../common/project_context.dart';
 
-/// Cash Estimation Screen - OWNER ONLY
-/// Displays real-time cash estimation based on completed floors
+/// Cash Estimation Screen - Simple Expense Tracker
+/// Allows users to add individual expenses and see total cost breakdown
 class CashEstimationScreen extends StatefulWidget {
   const CashEstimationScreen({super.key});
 
@@ -16,22 +15,32 @@ class CashEstimationScreen extends StatefulWidget {
 }
 
 class _CashEstimationScreenState extends State<CashEstimationScreen> {
-  final _service = FloorCashEstimationService();
-  final _totalFloorsController = TextEditingController();
-  final _totalCostController = TextEditingController();
+  final _expenseNameController = TextEditingController();
+  final _expenseAmountController = TextEditingController();
+  final _flatCostController = TextEditingController();
+  final _constructedFloorsController = TextEditingController();
   bool _isOwner = false;
   bool _checkingRole = true;
+  List<Map<String, dynamic>> _expenses = [];
+  double _flatCost = 0.0;
+  int _constructedFloors = 1;
+  bool _isLoading = false;
+
+  static const Color primary = Color(0xFF136DEC);
 
   @override
   void initState() {
     super.initState();
     _checkUserRole();
+    _loadExpenses();
   }
 
   @override
   void dispose() {
-    _totalFloorsController.dispose();
-    _totalCostController.dispose();
+    _expenseNameController.dispose();
+    _expenseAmountController.dispose();
+    _flatCostController.dispose();
+    _constructedFloorsController.dispose();
     super.dispose();
   }
 
@@ -71,117 +80,120 @@ class _CashEstimationScreenState extends State<CashEstimationScreen> {
     }
   }
 
-  Future<void> _showConfigurationDialog(BuildContext context) async {
+  Future<void> _loadExpenses() async {
     final projectId = ProjectContext.activeProjectId;
     if (projectId == null) return;
 
-    // Check if already configured
-    final isConfigured = await _service.isProjectConfigured(projectId);
-    
-    if (isConfigured && context.mounted) {
-      final confirm = await showDialog<bool>(
-        context: context,
-        builder: (context) => AlertDialog(
-          title: const Text('Reconfigure Project?'),
-          content: const Text(
-            'This project is already configured. Changing the configuration will affect all calculations. Continue?',
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(context, false),
-              child: const Text('Cancel'),
-            ),
-            TextButton(
-              onPressed: () => Navigator.pop(context, true),
-              child: const Text('Continue'),
-            ),
-          ],
-        ),
-      );
+    setState(() => _isLoading = true);
 
-      if (confirm != true) return;
+    try {
+      final doc = await FirebaseFirestore.instance
+          .collection('projects')
+          .doc(projectId)
+          .collection('cash_estimation')
+          .doc('expenses')
+          .get();
+
+      if (doc.exists) {
+        final data = doc.data()!;
+        setState(() {
+          _expenses = List<Map<String, dynamic>>.from(data['expenses'] ?? []);
+          _constructedFloors = data['constructedFloors'] ?? 1;
+          _flatCost = (data['flatCost'] ?? 0.0).toDouble();
+        });
+        
+        // Update controllers
+        _constructedFloorsController.text = _constructedFloors.toString();
+        if (_flatCost > 0) {
+          _flatCostController.text = _flatCost.toString();
+        }
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Error loading expenses: $e')),
+        );
+      }
+    } finally {
+      setState(() => _isLoading = false);
+    }
+  }
+
+  Future<void> _saveExpenses() async {
+    final projectId = ProjectContext.activeProjectId;
+    if (projectId == null) return;
+
+    try {
+      await FirebaseFirestore.instance
+          .collection('projects')
+          .doc(projectId)
+          .collection('cash_estimation')
+          .doc('expenses')
+          .set({
+        'expenses': _expenses,
+        'constructedFloors': _constructedFloors,
+        'flatCost': _flatCost,
+        'lastUpdated': FieldValue.serverTimestamp(),
+      });
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Error saving expenses: $e')),
+        );
+      }
+    }
+  }
+
+  void _addExpense() {
+    final name = _expenseNameController.text.trim();
+    final amountText = _expenseAmountController.text.trim();
+
+    if (name.isEmpty || amountText.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Please enter both name and amount')),
+      );
+      return;
     }
 
-    if (!context.mounted) return;
+    final amount = double.tryParse(amountText);
+    if (amount == null || amount <= 0) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Please enter a valid amount')),
+      );
+      return;
+    }
 
-    await showDialog(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('Configure Project'),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            TextField(
-              controller: _totalFloorsController,
-              decoration: const InputDecoration(
-                labelText: 'Total Number of Floors',
-                hintText: 'e.g., 3',
-              ),
-              keyboardType: TextInputType.number,
-              inputFormatters: [FilteringTextInputFormatter.digitsOnly],
-            ),
-            const SizedBox(height: 16),
-            TextField(
-              controller: _totalCostController,
-              decoration: const InputDecoration(
-                labelText: 'Total Estimated Cost (₹)',
-                hintText: 'e.g., 5000000',
-              ),
-              keyboardType: TextInputType.number,
-              inputFormatters: [FilteringTextInputFormatter.digitsOnly],
-            ),
-          ],
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: const Text('Cancel'),
-          ),
-          TextButton(
-            onPressed: () async {
-              final totalFloors = int.tryParse(_totalFloorsController.text);
-              final totalCost = double.tryParse(_totalCostController.text);
+    setState(() {
+      _expenses.add({
+        'name': name,
+        'amount': amount,
+        'id': DateTime.now().millisecondsSinceEpoch.toString(),
+      });
+    });
 
-              if (totalFloors == null || totalFloors <= 0) {
-                ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(content: Text('Please enter valid number of floors')),
-                );
-                return;
-              }
+    _expenseNameController.clear();
+    _expenseAmountController.clear();
+    _saveExpenses();
 
-              if (totalCost == null || totalCost <= 0) {
-                ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(content: Text('Please enter valid estimated cost')),
-                );
-                return;
-              }
-
-              try {
-                await _service.updateProjectConfiguration(
-                  projectId: projectId,
-                  totalFloors: totalFloors,
-                  totalEstimatedCost: totalCost,
-                );
-
-                if (context.mounted) {
-                  Navigator.pop(context);
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(content: Text('Configuration saved successfully')),
-                  );
-                }
-              } catch (e) {
-                if (context.mounted) {
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    SnackBar(content: Text('Error: $e')),
-                  );
-                }
-              }
-            },
-            child: const Text('Save'),
-          ),
-        ],
-      ),
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(content: Text('Expense added successfully')),
     );
+  }
+
+  void _removeExpense(String id) {
+    setState(() {
+      _expenses.removeWhere((expense) => expense['id'] == id);
+    });
+    _saveExpenses();
+  }
+
+  double get _totalExpenses {
+    return _expenses.fold(0.0, (total, expense) => total + (expense['amount'] as double));
+  }
+
+  double get _oneFlatCost {
+    if (_constructedFloors <= 0) return 0.0;
+    return _totalExpenses / _constructedFloors;
   }
 
   @override
@@ -261,100 +273,127 @@ class _CashEstimationScreenState extends State<CashEstimationScreen> {
         elevation: 0,
         actions: [
           IconButton(
-            icon: const Icon(Icons.settings),
-            onPressed: () => _showConfigurationDialog(context),
-            tooltip: 'Configure Project',
+            icon: const Icon(Icons.info_outline),
+            onPressed: () {
+              showDialog(
+                context: context,
+                builder: (context) => AlertDialog(
+                  title: const Text('How to Use'),
+                  content: const Text(
+                    '1. Add all your expenses (cement, steel, labor, etc.)\n'
+                    '2. Enter the number of flats in your building\n'
+                    '3. Click Calculate to see cost per flat\n'
+                    '4. Optionally enter selling price to see profit/loss',
+                  ),
+                  actions: [
+                    TextButton(
+                      onPressed: () => Navigator.pop(context),
+                      child: const Text('Got it'),
+                    ),
+                  ],
+                ),
+              );
+            },
+            tooltip: 'How to Use',
           ),
         ],
       ),
-      body: SafeArea(
-        child: StreamBuilder<Map<String, dynamic>>(
-          stream: _service.getCashEstimationStream(projectId),
-          builder: (context, snapshot) {
-            if (snapshot.connectionState == ConnectionState.waiting) {
-              return const Center(child: CircularProgressIndicator());
-            }
-
-            if (snapshot.hasError) {
-              return Center(
-                child: Text('Error: ${snapshot.error}'),
-              );
-            }
-
-            final data = snapshot.data ?? {};
-            final isConfigured = data['configured'] == true;
-
-            if (!isConfigured) {
-              return Center(
-                child: Padding(
-                  padding: const EdgeInsets.all(24.0),
-                  child: Column(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: [
-                      Icon(
-                        Icons.settings_outlined,
-                        size: 64,
-                        color: Colors.grey[400],
-                      ),
-                      const SizedBox(height: 16),
-                      Text(
-                        'Configuration Required',
-                        style: TextStyle(
-                          fontSize: 20,
-                          fontWeight: FontWeight.bold,
-                          color: Colors.grey[700],
-                        ),
-                      ),
-                      const SizedBox(height: 8),
-                      Text(
-                        data['message'] ?? 'Please configure the project to view cash estimation.',
-                        textAlign: TextAlign.center,
-                        style: TextStyle(
-                          fontSize: 14,
-                          color: Colors.grey[600],
-                        ),
-                      ),
-                      const SizedBox(height: 24),
-                      ElevatedButton.icon(
-                        onPressed: () => _showConfigurationDialog(context),
-                        icon: const Icon(Icons.add),
-                        label: const Text('Configure Now'),
-                        style: ElevatedButton.styleFrom(
-                          padding: const EdgeInsets.symmetric(
-                            horizontal: 24,
-                            vertical: 12,
-                          ),
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-              );
-            }
-
-            return SingleChildScrollView(
+      body: _isLoading
+          ? const Center(child: CircularProgressIndicator())
+          : SingleChildScrollView(
               padding: const EdgeInsets.all(16),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
-                  _buildEstimationCard(data),
+                  _buildSummaryCard(),
                   const SizedBox(height: 16),
-                  _buildFloorProgressCard(data),
+                  _buildAddExpenseCard(),
+                  const SizedBox(height: 16),
+                  _buildExpensesList(),
+                  const SizedBox(height: 16),
+                  _buildCostCalculationCard(),
                 ],
               ),
-            );
-          },
+            ),
+    );
+  }
+
+  Widget _buildSummaryCard() {
+    return ClipRRect(
+      borderRadius: BorderRadius.circular(18),
+      child: BackdropFilter(
+        filter: ui.ImageFilter.blur(sigmaX: 18, sigmaY: 18),
+        child: Container(
+          decoration: BoxDecoration(
+            color: Colors.white.withValues(alpha: 0.55),
+            borderRadius: BorderRadius.circular(18),
+            border: Border.all(color: Colors.white.withValues(alpha: 0.45)),
+            boxShadow: [
+              BoxShadow(
+                color: Colors.black.withValues(alpha: 0.06),
+                blurRadius: 16,
+                offset: const Offset(0, 8),
+              ),
+            ],
+          ),
+          padding: const EdgeInsets.all(20),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                children: [
+                  Icon(
+                    Icons.receipt_long_outlined,
+                    color: const Color(0xFF374151),
+                  ),
+                  const SizedBox(width: 8),
+                  Text(
+                    'Expense Summary',
+                    style: const TextStyle(
+                      fontWeight: FontWeight.w800,
+                      fontSize: 18,
+                      color: Color(0xFF1F2937),
+                    ),
+                  ),
+                  const Spacer(),
+                  if (_expenses.isNotEmpty)
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                      decoration: BoxDecoration(
+                        color: Colors.blue,
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                      child: Text(
+                        '${_expenses.length} items',
+                        style: const TextStyle(
+                          color: Colors.white,
+                          fontSize: 12,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                    ),
+                ],
+              ),
+              const SizedBox(height: 20),
+              _buildAmountRow('Total Expenses', _totalExpenses, Colors.red, isTotal: true),
+              if (_expenses.isNotEmpty) ...[
+                const SizedBox(height: 16),
+                Text(
+                  'Add more expenses above or calculate cost per flat below',
+                  style: const TextStyle(
+                    color: Color(0xFF6B7280),
+                    fontSize: 12,
+                  ),
+                ),
+              ],
+            ],
+          ),
         ),
       ),
     );
   }
 
-  Widget _buildEstimationCard(Map<String, dynamic> data) {
-    final totalCost = data['totalEstimatedCost'] as double;
-    final utilizedAmount = data['utilizedAmount'] as double;
-    final remainingAmount = data['remainingAmount'] as double;
-    final completionPercentage = data['completionPercentage'] as double;
-
+  Widget _buildCostCalculationCard() {
     return ClipRRect(
       borderRadius: BorderRadius.circular(18),
       child: BackdropFilter(
@@ -378,10 +417,10 @@ class _CashEstimationScreenState extends State<CashEstimationScreen> {
             children: [
               Row(
                 children: const [
-                  Icon(Icons.payments_outlined, color: Color(0xFF374151)),
+                  Icon(Icons.calculate_outlined, color: Color(0xFF374151)),
                   SizedBox(width: 8),
                   Text(
-                    'Cash Estimation',
+                    'Cost Calculation',
                     style: TextStyle(
                       fontWeight: FontWeight.w800,
                       fontSize: 18,
@@ -390,36 +429,286 @@ class _CashEstimationScreenState extends State<CashEstimationScreen> {
                   ),
                 ],
               ),
-              const SizedBox(height: 20),
-              _buildAmountRow('Total Estimated Cost', totalCost, Colors.blue),
-              const SizedBox(height: 12),
-              _buildAmountRow('Utilized Amount', utilizedAmount, Colors.orange),
-              const SizedBox(height: 12),
-              _buildAmountRow('Remaining Amount', remainingAmount, Colors.green),
-              const SizedBox(height: 20),
-              LinearProgressIndicator(
-                value: completionPercentage / 100,
-                backgroundColor: Colors.grey[300],
-                valueColor: const AlwaysStoppedAnimation<Color>(Color(0xFF136DEC)),
-                minHeight: 8,
-              ),
-              const SizedBox(height: 8),
-              Text(
-                '${completionPercentage.toStringAsFixed(1)}% Complete',
-                style: const TextStyle(
-                  fontSize: 14,
-                  fontWeight: FontWeight.w600,
-                  color: Color(0xFF374151),
-                ),
-              ),
               const SizedBox(height: 16),
-              const Text(
-                'Real-time estimation based on completed floors',
-                style: TextStyle(
-                  color: Color(0xFF6B7280),
-                  fontSize: 12,
+              
+              // Total Expenses Display
+              Container(
+                padding: const EdgeInsets.all(16),
+                decoration: BoxDecoration(
+                  color: Colors.blue.withValues(alpha: 0.1),
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(color: Colors.blue.withValues(alpha: 0.2)),
+                ),
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    const Text(
+                      'Total Expenses',
+                      style: TextStyle(
+                        fontSize: 16,
+                        fontWeight: FontWeight.w600,
+                        color: Color(0xFF1F2937),
+                      ),
+                    ),
+                    Text(
+                      '₹${_formatAmount(_totalExpenses)}',
+                      style: const TextStyle(
+                        fontSize: 18,
+                        fontWeight: FontWeight.w800,
+                        color: Color(0xFF136DEC),
+                      ),
+                    ),
+                  ],
                 ),
               ),
+              
+              const SizedBox(height: 20),
+              
+              // Floor Input Section
+              Row(
+                children: [
+                  Expanded(
+                    child: TextField(
+                      controller: _constructedFloorsController,
+                      decoration: InputDecoration(
+                        labelText: 'Number of Flats',
+                        hintText: 'Enter total flats',
+                        border: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                        filled: true,
+                        fillColor: Colors.white.withValues(alpha: 0.7),
+                        prefixIcon: const Icon(Icons.home_outlined),
+                      ),
+                      keyboardType: TextInputType.number,
+                      inputFormatters: [FilteringTextInputFormatter.digitsOnly],
+                      onChanged: (value) {
+                        setState(() {
+                          _constructedFloors = int.tryParse(value) ?? 1;
+                        });
+                      },
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  ElevatedButton(
+                    onPressed: () {
+                      if (_constructedFloors > 0 && _totalExpenses > 0) {
+                        setState(() {
+                          // Trigger recalculation
+                        });
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          const SnackBar(content: Text('Cost calculated!')),
+                        );
+                      } else {
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          const SnackBar(content: Text('Please enter valid number of flats and add expenses')),
+                        );
+                      }
+                    },
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: primary,
+                      foregroundColor: Colors.white,
+                      padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                    ),
+                    child: const Text('Calculate'),
+                  ),
+                ],
+              ),
+              
+              const SizedBox(height: 20),
+              
+              // Calculation Results
+              if (_constructedFloors > 0 && _totalExpenses > 0) ...[
+                Container(
+                  padding: const EdgeInsets.all(16),
+                  decoration: BoxDecoration(
+                    color: Colors.green.withValues(alpha: 0.1),
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(color: Colors.green.withValues(alpha: 0.2)),
+                  ),
+                  child: Column(
+                    children: [
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        children: [
+                          const Text(
+                            'Cost per Flat',
+                            style: TextStyle(
+                              fontSize: 16,
+                              fontWeight: FontWeight.w600,
+                              color: Color(0xFF1F2937),
+                            ),
+                          ),
+                          Text(
+                            '₹${_formatAmount(_oneFlatCost)}',
+                            style: const TextStyle(
+                              fontSize: 20,
+                              fontWeight: FontWeight.w800,
+                              color: Color(0xFF10B981),
+                            ),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 8),
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        children: [
+                          Text(
+                            'For $_constructedFloors flat${_constructedFloors == 1 ? '' : 's'}',
+                            style: const TextStyle(
+                              fontSize: 14,
+                              color: Color(0xFF6B7280),
+                            ),
+                          ),
+                          Text(
+                            '₹${_formatAmount(_totalExpenses)} ÷ $_constructedFloors',
+                            style: const TextStyle(
+                              fontSize: 14,
+                              color: Color(0xFF6B7280),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ],
+                  ),
+                ),
+                
+                const SizedBox(height: 16),
+                
+                // Profit/Loss Section (Optional)
+                Row(
+                  children: [
+                    Expanded(
+                      child: TextField(
+                        controller: _flatCostController,
+                        decoration: InputDecoration(
+                          labelText: 'Selling Price per Flat (Optional)',
+                          hintText: 'Enter selling price',
+                          border: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(12),
+                          ),
+                          filled: true,
+                          fillColor: Colors.white.withValues(alpha: 0.7),
+                          prefixIcon: const Icon(Icons.currency_rupee),
+                        ),
+                        keyboardType: TextInputType.number,
+                        inputFormatters: [FilteringTextInputFormatter.digitsOnly],
+                        onChanged: (value) {
+                          setState(() {
+                            _flatCost = double.tryParse(value) ?? 0.0;
+                          });
+                        },
+                      ),
+                    ),
+                  ],
+                ),
+                
+                if (_flatCost > 0) ...[
+                  const SizedBox(height: 16),
+                  Container(
+                    padding: const EdgeInsets.all(16),
+                    decoration: BoxDecoration(
+                      color: (_flatCost - _oneFlatCost) >= 0 
+                          ? Colors.green.withValues(alpha: 0.1)
+                          : Colors.red.withValues(alpha: 0.1),
+                      borderRadius: BorderRadius.circular(12),
+                      border: Border.all(
+                        color: (_flatCost - _oneFlatCost) >= 0 
+                            ? Colors.green.withValues(alpha: 0.2)
+                            : Colors.red.withValues(alpha: 0.2),
+                      ),
+                    ),
+                    child: Column(
+                      children: [
+                        Row(
+                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                          children: [
+                            const Text(
+                              'Profit/Loss per Flat',
+                              style: TextStyle(
+                                fontSize: 16,
+                                fontWeight: FontWeight.w600,
+                                color: Color(0xFF1F2937),
+                              ),
+                            ),
+                            Text(
+                              '₹${_formatAmount(_flatCost - _oneFlatCost)}',
+                              style: TextStyle(
+                                fontSize: 18,
+                                fontWeight: FontWeight.w800,
+                                color: (_flatCost - _oneFlatCost) >= 0 
+                                    ? const Color(0xFF10B981)
+                                    : const Color(0xFFEF4444),
+                              ),
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 8),
+                        Row(
+                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                          children: [
+                            Text(
+                              (_flatCost - _oneFlatCost) >= 0 ? 'Profit' : 'Loss',
+                              style: TextStyle(
+                                fontSize: 14,
+                                color: (_flatCost - _oneFlatCost) >= 0 
+                                    ? const Color(0xFF10B981)
+                                    : const Color(0xFFEF4444),
+                              ),
+                            ),
+                            Text(
+                              '₹${_formatAmount(_flatCost)} - ₹${_formatAmount(_oneFlatCost)}',
+                              style: const TextStyle(
+                                fontSize: 14,
+                                color: Color(0xFF6B7280),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              ] else ...[
+                Container(
+                  padding: const EdgeInsets.all(20),
+                  decoration: BoxDecoration(
+                    color: Colors.grey.withValues(alpha: 0.1),
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(color: Colors.grey.withValues(alpha: 0.2)),
+                  ),
+                  child: Column(
+                    children: [
+                      Icon(
+                        Icons.calculate,
+                        size: 48,
+                        color: Colors.grey[400],
+                      ),
+                      const SizedBox(height: 12),
+                      Text(
+                        'Enter Number of Flats',
+                        style: TextStyle(
+                          fontSize: 16,
+                          fontWeight: FontWeight.w600,
+                          color: Colors.grey[600],
+                        ),
+                      ),
+                      const SizedBox(height: 8),
+                      Text(
+                        'Add expenses above, then enter the number of flats to calculate cost per flat',
+                        textAlign: TextAlign.center,
+                        style: TextStyle(
+                          fontSize: 14,
+                          color: Colors.grey[500],
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
             ],
           ),
         ),
@@ -427,21 +716,22 @@ class _CashEstimationScreenState extends State<CashEstimationScreen> {
     );
   }
 
-  Widget _buildAmountRow(String label, double amount, Color color) {
+  Widget _buildAmountRow(String label, double amount, Color color, {bool isTotal = false}) {
     return Row(
       mainAxisAlignment: MainAxisAlignment.spaceBetween,
       children: [
         Text(
           label,
-          style: const TextStyle(
-            fontSize: 14,
-            color: Color(0xFF374151),
+          style: TextStyle(
+            fontSize: isTotal ? 16 : 14,
+            fontWeight: isTotal ? FontWeight.w600 : FontWeight.normal,
+            color: const Color(0xFF374151),
           ),
         ),
         Text(
           '₹${_formatAmount(amount)}',
           style: TextStyle(
-            fontSize: 16,
+            fontSize: isTotal ? 18 : 16,
             fontWeight: FontWeight.w700,
             color: color,
           ),
@@ -450,10 +740,143 @@ class _CashEstimationScreenState extends State<CashEstimationScreen> {
     );
   }
 
-  Widget _buildFloorProgressCard(Map<String, dynamic> data) {
-    final totalFloors = data['totalFloors'] as int;
-    final completedFloors = data['completedFloors'] as int;
-    final amountPerFloor = data['amountPerFloor'] as double;
+  Widget _buildAddExpenseCard() {
+    return ClipRRect(
+      borderRadius: BorderRadius.circular(18),
+      child: BackdropFilter(
+        filter: ui.ImageFilter.blur(sigmaX: 18, sigmaY: 18),
+        child: Container(
+          decoration: BoxDecoration(
+            color: Colors.white.withValues(alpha: 0.55),
+            borderRadius: BorderRadius.circular(18),
+            border: Border.all(color: Colors.white.withValues(alpha: 0.45)),
+            boxShadow: [
+              BoxShadow(
+                color: Colors.black.withValues(alpha: 0.06),
+                blurRadius: 16,
+                offset: const Offset(0, 8),
+              ),
+            ],
+          ),
+          padding: const EdgeInsets.all(20),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                children: const [
+                  Icon(Icons.add_circle_outline, color: Color(0xFF374151)),
+                  SizedBox(width: 8),
+                  Text(
+                    'Add Expense',
+                    style: TextStyle(
+                      fontWeight: FontWeight.w800,
+                      fontSize: 18,
+                      color: Color(0xFF1F2937),
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 16),
+              TextField(
+                controller: _expenseNameController,
+                decoration: InputDecoration(
+                  labelText: 'Expense Name',
+                  hintText: 'e.g., Cement, Steel, Labor',
+                  border: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  filled: true,
+                  fillColor: Colors.white.withValues(alpha: 0.7),
+                ),
+              ),
+              const SizedBox(height: 12),
+              TextField(
+                controller: _expenseAmountController,
+                decoration: InputDecoration(
+                  labelText: 'Amount (₹)',
+                  hintText: 'Enter amount',
+                  border: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  filled: true,
+                  fillColor: Colors.white.withValues(alpha: 0.7),
+                ),
+                keyboardType: TextInputType.number,
+                inputFormatters: [FilteringTextInputFormatter.digitsOnly],
+              ),
+              const SizedBox(height: 16),
+              SizedBox(
+                width: double.infinity,
+                child: ElevatedButton(
+                  onPressed: _addExpense,
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: primary,
+                    foregroundColor: Colors.white,
+                    padding: const EdgeInsets.symmetric(vertical: 16),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                  ),
+                  child: const Text(
+                    'Add Expense',
+                    style: TextStyle(
+                      fontSize: 16,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildExpensesList() {
+    if (_expenses.isEmpty) {
+      return ClipRRect(
+        borderRadius: BorderRadius.circular(18),
+        child: BackdropFilter(
+          filter: ui.ImageFilter.blur(sigmaX: 18, sigmaY: 18),
+          child: Container(
+            decoration: BoxDecoration(
+              color: Colors.white.withValues(alpha: 0.55),
+              borderRadius: BorderRadius.circular(18),
+              border: Border.all(color: Colors.white.withValues(alpha: 0.45)),
+            ),
+            padding: const EdgeInsets.all(40),
+            child: Column(
+              children: [
+                Icon(
+                  Icons.receipt_long_outlined,
+                  size: 48,
+                  color: Colors.grey[400],
+                ),
+                const SizedBox(height: 16),
+                Text(
+                  'No Expenses Added',
+                  style: TextStyle(
+                    fontSize: 16,
+                    fontWeight: FontWeight.w600,
+                    color: Colors.grey[600],
+                  ),
+                ),
+                const SizedBox(height: 8),
+                Text(
+                  'Add your first expense above to start tracking costs',
+                  textAlign: TextAlign.center,
+                  style: TextStyle(
+                    fontSize: 14,
+                    color: Colors.grey[500],
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      );
+    }
 
     return ClipRRect(
       borderRadius: BorderRadius.circular(18),
@@ -478,10 +901,10 @@ class _CashEstimationScreenState extends State<CashEstimationScreen> {
             children: [
               Row(
                 children: const [
-                  Icon(Icons.layers_outlined, color: Color(0xFF374151)),
+                  Icon(Icons.receipt_long, color: Color(0xFF374151)),
                   SizedBox(width: 8),
                   Text(
-                    'Floor Progress',
+                    'Expenses List',
                     style: TextStyle(
                       fontWeight: FontWeight.w800,
                       fontSize: 18,
@@ -491,68 +914,50 @@ class _CashEstimationScreenState extends State<CashEstimationScreen> {
                 ],
               ),
               const SizedBox(height: 16),
-              Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                children: [
-                  const Text(
-                    'Total Floors',
-                    style: TextStyle(
-                      fontSize: 14,
-                      color: Color(0xFF374151),
-                    ),
+              ...List.generate(_expenses.length, (index) {
+                final expense = _expenses[index];
+                return Container(
+                  margin: const EdgeInsets.only(bottom: 8),
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    color: Colors.white.withValues(alpha: 0.7),
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(color: Colors.grey.withValues(alpha: 0.2)),
                   ),
-                  Text(
-                    '$totalFloors',
-                    style: const TextStyle(
-                      fontSize: 16,
-                      fontWeight: FontWeight.w700,
-                      color: Color(0xFF1F2937),
-                    ),
+                  child: Row(
+                    children: [
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              expense['name'],
+                              style: const TextStyle(
+                                fontWeight: FontWeight.w600,
+                                fontSize: 14,
+                                color: Color(0xFF1F2937),
+                              ),
+                            ),
+                            Text(
+                              '₹${_formatAmount(expense['amount'])}',
+                              style: const TextStyle(
+                                fontSize: 16,
+                                fontWeight: FontWeight.w700,
+                                color: Color(0xFF136DEC),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                      IconButton(
+                        icon: const Icon(Icons.delete_outline, color: Colors.red),
+                        onPressed: () => _removeExpense(expense['id']),
+                        tooltip: 'Delete expense',
+                      ),
+                    ],
                   ),
-                ],
-              ),
-              const SizedBox(height: 12),
-              Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                children: [
-                  const Text(
-                    'Completed Floors',
-                    style: TextStyle(
-                      fontSize: 14,
-                      color: Color(0xFF374151),
-                    ),
-                  ),
-                  Text(
-                    '$completedFloors',
-                    style: const TextStyle(
-                      fontSize: 16,
-                      fontWeight: FontWeight.w700,
-                      color: Color(0xFF10B981),
-                    ),
-                  ),
-                ],
-              ),
-              const SizedBox(height: 12),
-              Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                children: [
-                  const Text(
-                    'Cost per Floor',
-                    style: TextStyle(
-                      fontSize: 14,
-                      color: Color(0xFF374151),
-                    ),
-                  ),
-                  Text(
-                    '₹${_formatAmount(amountPerFloor)}',
-                    style: const TextStyle(
-                      fontSize: 16,
-                      fontWeight: FontWeight.w700,
-                      color: Color(0xFF136DEC),
-                    ),
-                  ),
-                ],
-              ),
+                );
+              }),
             ],
           ),
         ),

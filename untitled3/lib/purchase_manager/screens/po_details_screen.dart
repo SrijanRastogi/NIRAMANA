@@ -1,21 +1,19 @@
 import 'package:flutter/material.dart';
-import '../../common/models/project_model.dart';
+import 'dart:ui' as ui;
 import '../../models/purchase_order_model.dart';
-import '../../models/grn_model.dart';
-import '../../services/procurement_service.dart';
-import 'create_gst_bill_screen.dart';
+import 'package:intl/intl.dart';
 
+/// PO Details Screen - View and manage purchase order details
 class PODetailsScreen extends StatelessWidget {
   final PurchaseOrderModel po;
-  final ProjectModel project;
 
-  const PODetailsScreen({super.key, required this.po, required this.project});
+  const PODetailsScreen({super.key, required this.po});
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: const Text('PO Details'),
+        title: Text(po.poNumber ?? 'Purchase Order'),
         backgroundColor: const Color(0xFF136DEC),
         foregroundColor: Colors.white,
       ),
@@ -24,13 +22,17 @@ class PODetailsScreen extends StatelessWidget {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            _buildInfoCard(context),
+            _buildStatusCard(),
             const SizedBox(height: 24),
-            const Text("Items", style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
-            const SizedBox(height: 12),
-            _buildItemsList(),
+            _buildVendorSection(),
             const SizedBox(height: 24),
-            _buildGRNSection(context),
+            _buildItemsSection(),
+            const SizedBox(height: 24),
+            _buildSummarySection(),
+            if (po.notes != null && po.notes!.isNotEmpty) ...[
+              const SizedBox(height: 24),
+              _buildNotesSection(),
+            ],
             const SizedBox(height: 40),
           ],
         ),
@@ -38,167 +40,298 @@ class PODetailsScreen extends StatelessWidget {
     );
   }
 
-  Widget _buildInfoCard(BuildContext context) {
-    return Card(
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-      child: Padding(
-        padding: const EdgeInsets.all(16),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: [
-                Text("PO ID: ${po.id.substring(0, 8)}", 
-                  style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
-                _buildStatusBadge(po.status),
-              ],
+  Widget _buildStatusCard() {
+    Color statusColor;
+    String statusText;
+    IconData statusIcon;
+
+    switch (po.status) {
+      case 'PO_CREATED':
+        statusColor = Colors.blue;
+        statusText = 'Active - Awaiting Delivery';
+        statusIcon = Icons.pending_actions;
+        break;
+      case 'GRN_CONFIRMED':
+        statusColor = Colors.green;
+        statusText = 'Completed - Goods Received';
+        statusIcon = Icons.check_circle;
+        break;
+      default:
+        statusColor = Colors.grey;
+        statusText = po.status;
+        statusIcon = Icons.help;
+    }
+
+    return ClipRRect(
+      borderRadius: BorderRadius.circular(12),
+      child: BackdropFilter(
+        filter: ui.ImageFilter.blur(sigmaX: 10, sigmaY: 10),
+        child: Container(
+          decoration: BoxDecoration(
+            gradient: LinearGradient(
+              colors: [statusColor, statusColor.withValues(alpha: 0.7)],
+              begin: Alignment.topLeft,
+              end: Alignment.bottomRight,
             ),
-            const Divider(height: 24),
-            _buildInfoRow(Icons.business, "Vendor", po.vendorName),
-            _buildInfoRow(Icons.receipt_long, "GSTIN", po.vendorGSTIN),
-            if (po.poNumber != null && po.poNumber!.isNotEmpty)
-              _buildInfoRow(Icons.numbers, "PO Number", po.poNumber!),
-            _buildInfoRow(Icons.calendar_today, "Date", po.createdAt.toString().split(' ')[0]),
-            _buildInfoRow(Icons.account_balance, "GST Type", po.gstType.replaceAll('_', ' + ')),
-          ],
+            borderRadius: BorderRadius.circular(12),
+            border: Border.all(color: Colors.white.withValues(alpha: 0.3)),
+          ),
+          padding: const EdgeInsets.all(20),
+          child: Row(
+            children: [
+              Icon(statusIcon, color: Colors.white, size: 32),
+              const SizedBox(width: 16),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Text(
+                      'Status',
+                      style: TextStyle(
+                        color: Colors.white70,
+                        fontSize: 12,
+                        fontWeight: FontWeight.w500,
+                      ),
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      statusText,
+                      style: const TextStyle(
+                        color: Colors.white,
+                        fontSize: 18,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
         ),
       ),
     );
   }
 
-  Widget _buildInfoRow(IconData icon, String label, String value) {
+  Widget _buildVendorSection() {
+    return ClipRRect(
+      borderRadius: BorderRadius.circular(12),
+      child: BackdropFilter(
+        filter: ui.ImageFilter.blur(sigmaX: 10, sigmaY: 10),
+        child: Container(
+          decoration: BoxDecoration(
+            color: Colors.white.withValues(alpha: 0.9),
+            borderRadius: BorderRadius.circular(12),
+            border: Border.all(color: Colors.white.withValues(alpha: 0.5)),
+          ),
+          padding: const EdgeInsets.all(16),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Text(
+                'Vendor Details',
+                style: TextStyle(
+                  fontSize: 16,
+                  fontWeight: FontWeight.bold,
+                  color: Color(0xFF136DEC),
+                ),
+              ),
+              const SizedBox(height: 16),
+              _buildDetailRow('Vendor Name', po.vendorName),
+              _buildDetailRow('GSTIN', po.vendorGSTIN),
+              if (po.vendorContact != null)
+                _buildDetailRow('Contact', po.vendorContact!),
+              if (po.vendorAddress != null)
+                _buildDetailRow('Address', po.vendorAddress!),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildItemsSection() {
+    return ClipRRect(
+      borderRadius: BorderRadius.circular(12),
+      child: BackdropFilter(
+        filter: ui.ImageFilter.blur(sigmaX: 10, sigmaY: 10),
+        child: Container(
+          decoration: BoxDecoration(
+            color: Colors.white.withValues(alpha: 0.9),
+            borderRadius: BorderRadius.circular(12),
+            border: Border.all(color: Colors.white.withValues(alpha: 0.5)),
+          ),
+          padding: const EdgeInsets.all(16),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Text(
+                'PO Items',
+                style: TextStyle(
+                  fontSize: 16,
+                  fontWeight: FontWeight.bold,
+                  color: Color(0xFF136DEC),
+                ),
+              ),
+              const SizedBox(height: 16),
+              SingleChildScrollView(
+                scrollDirection: Axis.horizontal,
+                child: DataTable(
+                  columns: const [
+                    DataColumn(label: Text('Material')),
+                    DataColumn(label: Text('Qty'), numeric: true),
+                    DataColumn(label: Text('Unit')),
+                    DataColumn(label: Text('Rate'), numeric: true),
+                    DataColumn(label: Text('Amount'), numeric: true),
+                  ],
+                  rows: po.items
+                      .map((item) => DataRow(cells: [
+                            DataCell(Text(item.materialName)),
+                            DataCell(Text(item.quantity.toStringAsFixed(2))),
+                            DataCell(Text(item.unit)),
+                            DataCell(Text('₹${item.rate.toStringAsFixed(2)}')),
+                            DataCell(Text('₹${item.amount.toStringAsFixed(2)}')),
+                          ]))
+                      .toList(),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildSummarySection() {
+    final gstRate = po.gstType == 'IGST' ? 0.18 : 0.09;
+    final gstAmount = po.totalAmount * gstRate;
+    final totalWithGST = po.totalAmount + gstAmount;
+
+    return ClipRRect(
+      borderRadius: BorderRadius.circular(12),
+      child: BackdropFilter(
+        filter: ui.ImageFilter.blur(sigmaX: 10, sigmaY: 10),
+        child: Container(
+          decoration: BoxDecoration(
+            color: Colors.blue.withValues(alpha: 0.05),
+            borderRadius: BorderRadius.circular(12),
+            border: Border.all(color: Colors.blue.withValues(alpha: 0.2)),
+          ),
+          padding: const EdgeInsets.all(16),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Text(
+                'Order Summary',
+                style: TextStyle(
+                  fontSize: 16,
+                  fontWeight: FontWeight.bold,
+                  color: Color(0xFF136DEC),
+                ),
+              ),
+              const SizedBox(height: 16),
+              _buildSummaryRow('Base Amount', '₹${po.totalAmount.toStringAsFixed(2)}'),
+              _buildSummaryRow(
+                '${po.gstType == 'IGST' ? 'IGST' : 'CGST+SGST'} (${(gstRate * 100).toStringAsFixed(0)}%)',
+                '₹${gstAmount.toStringAsFixed(2)}',
+              ),
+              const Divider(height: 16),
+              _buildSummaryRow(
+                'Total Amount',
+                '₹${totalWithGST.toStringAsFixed(2)}',
+                isBold: true,
+              ),
+              const SizedBox(height: 16),
+              _buildDetailRow('Created', DateFormat('dd MMM yyyy, hh:mm a').format(po.createdAt)),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildNotesSection() {
+    return ClipRRect(
+      borderRadius: BorderRadius.circular(12),
+      child: BackdropFilter(
+        filter: ui.ImageFilter.blur(sigmaX: 10, sigmaY: 10),
+        child: Container(
+          decoration: BoxDecoration(
+            color: Colors.amber.withValues(alpha: 0.05),
+            borderRadius: BorderRadius.circular(12),
+            border: Border.all(color: Colors.amber.withValues(alpha: 0.2)),
+          ),
+          padding: const EdgeInsets.all(16),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Text(
+                'Notes',
+                style: TextStyle(
+                  fontSize: 16,
+                  fontWeight: FontWeight.bold,
+                  color: Color(0xFF136DEC),
+                ),
+              ),
+              const SizedBox(height: 12),
+              Text(po.notes!),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildDetailRow(String label, String value) {
     return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 4),
+      padding: const EdgeInsets.only(bottom: 12),
       child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Icon(icon, size: 20, color: Colors.grey),
-          const SizedBox(width: 8),
-          Text("$label: ", style: const TextStyle(color: Colors.grey)),
-          Expanded(child: Text(value, style: const TextStyle(fontWeight: FontWeight.w500))),
+          SizedBox(
+            width: 100,
+            child: Text(
+              label,
+              style: const TextStyle(
+                color: Color(0xFF6B7280),
+                fontWeight: FontWeight.w500,
+              ),
+            ),
+          ),
+          Expanded(
+            child: Text(
+              value,
+              style: const TextStyle(
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+          ),
         ],
       ),
     );
   }
 
-  Widget _buildItemsList() {
-    return Column(
-      children: po.items.map((item) => Card(
-        margin: const EdgeInsets.only(bottom: 8),
-        child: ListTile(
-          title: Text(item.materialName, style: const TextStyle(fontWeight: FontWeight.bold)),
-          subtitle: Text("${item.quantity} ${item.unit} @ ₹ ${item.rate}"),
-          trailing: Text("₹ ${item.amount.toStringAsFixed(2)}", 
-            style: const TextStyle(fontWeight: FontWeight.bold)),
-        ),
-      )).toList(),
-    );
-  }
-
-  Widget _buildGRNSection(BuildContext context) {
-    return FutureBuilder<GRNModel?>(
-      future: ProcurementService.getGRNByPOId(po.projectId, po.id),
-      builder: (context, snapshot) {
-        if (snapshot.connectionState == ConnectionState.waiting) {
-          return const Center(child: CircularProgressIndicator());
-        }
-
-        final grn = snapshot.data;
-        if (grn == null) {
-          return const Card(
-            color: Color(0xFFFFF9C4),
-            child: Padding(
-              padding: EdgeInsets.all(16),
-              child: Row(
-                children: [
-                  Icon(Icons.pending_actions, color: Colors.orange),
-                  SizedBox(width: 12),
-                  Expanded(child: Text("Waiting for GRN (Material Delivery Confirmation by Field Manager)")),
-                ],
-              ),
+  Widget _buildSummaryRow(String label, String value, {bool isBold = false}) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 8),
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+        children: [
+          Text(
+            label,
+            style: TextStyle(
+              fontWeight: isBold ? FontWeight.bold : FontWeight.w500,
+              fontSize: isBold ? 16 : 14,
             ),
-          );
-        }
-
-        return Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            const Text("GRN Details", style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
-            const SizedBox(height: 12),
-            Card(
-              color: Colors.green.shade50,
-              child: Padding(
-                padding: const EdgeInsets.all(16),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    const Row(
-                      children: [
-                        Icon(Icons.check_circle, color: Colors.green),
-                        SizedBox(width: 8),
-                        Text("Material Received & Verified", 
-                          style: TextStyle(color: Colors.green, fontWeight: FontWeight.bold)),
-                      ],
-                    ),
-                    const SizedBox(height: 12),
-                    Text("Verified At: ${grn.verifiedAt.toString().split('.')[0]}"),
-                    if (grn.notes != null) Text("Notes: ${grn.notes}"),
-                    const SizedBox(height: 16),
-                    if (po.status == 'GRN_CONFIRMED')
-                      SizedBox(
-                        width: double.infinity,
-                        child: ElevatedButton.icon(
-                          onPressed: () {
-                            Navigator.push(
-                              context,
-                              MaterialPageRoute(
-                                builder: (context) => CreateGSTBillScreen(po: po, grn: grn, project: project),
-                              ),
-                            );
-                          },
-                          icon: const Icon(Icons.receipt),
-                          label: const Text("GENERATE GST BILL"),
-                          style: ElevatedButton.styleFrom(
-                            backgroundColor: const Color(0xFF136DEC),
-                            foregroundColor: Colors.white,
-                          ),
-                        ),
-                      ),
-                    if (po.status == 'BILL_GENERATED' || po.status == 'BILL_APPROVED')
-                      const Center(
-                        child: Text("Bill has been generated for this PO", 
-                          style: TextStyle(fontStyle: FontStyle.italic, color: Colors.grey)),
-                      ),
-                  ],
-                ),
-              ),
+          ),
+          Text(
+            value,
+            style: TextStyle(
+              fontWeight: isBold ? FontWeight.bold : FontWeight.w600,
+              fontSize: isBold ? 16 : 14,
+              color: isBold ? const Color(0xFF136DEC) : Colors.black,
             ),
-          ],
-        );
-      },
-    );
-  }
-
-  Widget _buildStatusBadge(String status) {
-    Color color;
-    switch (status) {
-      case 'PO_CREATED': color = Colors.blue; break;
-      case 'GRN_CONFIRMED': color = Colors.orange; break;
-      case 'BILL_GENERATED': color = Colors.purple; break;
-      case 'BILL_APPROVED': color = Colors.green; break;
-      default: color = Colors.grey;
-    }
-
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-      decoration: BoxDecoration(
-        color: color.withValues(alpha: 0.1),
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: color),
-      ),
-      child: Text(
-        status.replaceAll('_', ' '),
-        style: TextStyle(color: color, fontSize: 10, fontWeight: FontWeight.bold),
+          ),
+        ],
       ),
     );
   }

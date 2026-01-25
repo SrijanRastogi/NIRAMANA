@@ -15,6 +15,7 @@ import 'petty_cash_review_screen.dart';
 import 'screens/mr_approval_screen.dart';
 import 'billing/engineer_billing_screen.dart';
 import '../common/screens/milestone_hub_screen.dart';
+import '../common/screens/inventory_management_screen.dart';
 import '../common/services/logout_service.dart';
 import '../common/widgets/public_id_display.dart';
 import '../common/widgets/social_user_card.dart';
@@ -560,6 +561,19 @@ class EngineerHomeScreen extends StatelessWidget {
                       context,
                       MaterialPageRoute(
                         builder: (_) => ProjectDetailsScreen(projectId: ProjectContext.activeProjectId!),
+                      ),
+                    );
+                  },
+                ),
+                _ActionCard(
+                  title: 'Inventory Tracking',
+                  icon: Icons.warehouse_outlined,
+                  notifications: 0,
+                  onTap: () {
+                    Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                        builder: (_) => const InventoryManagementScreen(),
                       ),
                     );
                   },

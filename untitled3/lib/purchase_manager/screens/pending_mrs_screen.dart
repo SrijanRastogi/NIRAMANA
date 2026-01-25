@@ -59,7 +59,7 @@ class PendingMRsScreen extends StatelessWidget {
                     Navigator.push(
                       context,
                       MaterialPageRoute(
-                        builder: (_) => CreatePOScreen(project: project, mr: mr),
+                        builder: (_) => CreatePOScreen(mr: mr),
                       ),
                     );
                   },

@@ -1,14 +1,12 @@
 import 'package:flutter/material.dart';
 import '../../models/material_request_model.dart';
-import '../../common/models/project_model.dart';
 import '../../models/purchase_order_model.dart';
 import '../../services/procurement_service.dart';
 
 class CreatePOScreen extends StatefulWidget {
-  final ProjectModel project;
   final MaterialRequestModel mr;
 
-  const CreatePOScreen({super.key, required this.project, required this.mr});
+  const CreatePOScreen({super.key, required this.mr});
 
   @override
   State<CreatePOScreen> createState() => _CreatePOScreenState();
@@ -76,10 +74,10 @@ class _CreatePOScreenState extends State<CreatePOScreen> {
       }
 
       final po = PurchaseOrderModel(
-        id: '', // Firestore will generate
-        projectId: widget.project.id,
+        id: '',
+        projectId: widget.mr.projectId,
         mrId: widget.mr.id,
-        createdBy: '', // Service will fill
+        createdBy: '',
         createdAt: DateTime.now(),
         vendorName: _vendorNameController.text.trim(),
         vendorGSTIN: _vendorGSTINController.text.trim().toUpperCase(),
@@ -96,14 +94,14 @@ class _CreatePOScreenState extends State<CreatePOScreen> {
 
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Purchase Order created successfully')),
+          const SnackBar(content: Text('✅ Purchase Order created successfully')),
         );
-        Navigator.pop(context); // Back to Pending MRs
+        Navigator.pop(context);
       }
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Error: $e'), backgroundColor: Colors.red),
+          SnackBar(content: Text('❌ Error: $e'), backgroundColor: Colors.red),
         );
       }
     } finally {
@@ -131,7 +129,7 @@ class _CreatePOScreenState extends State<CreatePOScreen> {
                   TextFormField(
                     controller: _vendorNameController,
                     decoration: const InputDecoration(
-                      labelText: 'Vendor Name',
+                      labelText: 'Vendor Name *',
                       border: OutlineInputBorder(),
                       prefixIcon: Icon(Icons.business),
                     ),
@@ -141,9 +139,10 @@ class _CreatePOScreenState extends State<CreatePOScreen> {
                   TextFormField(
                     controller: _vendorGSTINController,
                     decoration: const InputDecoration(
-                      labelText: 'Vendor GSTIN',
+                      labelText: 'Vendor GSTIN *',
                       border: OutlineInputBorder(),
                       prefixIcon: Icon(Icons.receipt_long),
+                      hintText: '15 character GSTIN',
                     ),
                     validator: (v) {
                       if (v == null || v.isEmpty) return 'Required';
@@ -192,7 +191,7 @@ class _CreatePOScreenState extends State<CreatePOScreen> {
                             TextFormField(
                               controller: _rateControllers[index],
                               decoration: const InputDecoration(
-                                labelText: 'Rate (per unit)',
+                                labelText: 'Rate (per unit) *',
                                 border: OutlineInputBorder(),
                                 prefixText: '₹ ',
                               ),

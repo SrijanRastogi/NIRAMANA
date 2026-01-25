@@ -16,6 +16,7 @@ import 'plot_analysis/plot_entry_screen.dart';
 import '../common/screens/milestone_timeline_screen.dart';
 import '../common/screens/milestone_hub_screen.dart';
 import '../common/screens/cash_estimation_screen.dart';
+import '../common/screens/inventory_management_screen.dart';
 import '../common/services/logout_service.dart';
 import '../common/localization/language_controller.dart';
 import '../common/widgets/public_id_display.dart';
@@ -874,6 +875,18 @@ class _DashboardTab extends StatelessWidget {
                                     builder: (_) => OwnerMaterialsScreen(
                                       projectId: ProjectContext.activeProjectId!,
                                     ),
+                                  ),
+                                );
+                              },
+                            ),
+                            _ActionCard(
+                              title: 'Inventory Tracking',
+                              icon: Icons.warehouse_outlined,
+                              onTap: () {
+                                Navigator.push(
+                                  context,
+                                  MaterialPageRoute(
+                                    builder: (_) => const InventoryManagementScreen(),
                                   ),
                                 );
                               },
