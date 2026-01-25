@@ -177,10 +177,10 @@ class ProjectModel extends HiveObject {
       'purchaseManagerId': purchaseManagerUid ?? purchaseManagerId,
       'status': status,
       'createdAt': Timestamp.fromDate(createdAt),
-      if (ownerApprovedAt != null)
-        'ownerApprovedAt': Timestamp.fromDate(ownerApprovedAt!),
-      if (managerAcceptedAt != null)
-        'managerAcceptedAt': Timestamp.fromDate(managerAcceptedAt!),
+      // ✅ REQUIRED: Initialize approval state for all new projects
+      'ownerApproved': false,
+      'ownerApprovedAt': ownerApprovedAt != null ? Timestamp.fromDate(ownerApprovedAt!) : null,
+      'managerAcceptedAt': managerAcceptedAt != null ? Timestamp.fromDate(managerAcceptedAt!) : null,
       if (ownerUid != null) 'ownerUid': ownerUid,
       if (managerUid != null) 'managerUid': managerUid,
       if (purchaseManagerUid != null) 'purchaseManagerUid': purchaseManagerUid,

@@ -1,5 +1,6 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:flutter/foundation.dart';
 import '../models/user_model.dart';
 import '../models/project_model.dart';
 
@@ -86,7 +87,15 @@ class FirestoreService {
 
   /// Create a new project
   static Future<String> createProject(ProjectModel project) async {
-    final docRef = await _firestore.collection('projects').add(project.toFirestore());
+    final firebasePayload = project.toFirestore();
+    
+    // ✅ DEBUG: Confirm approval fields are initialized
+    debugPrint('✅ Project created with ownerApproved=${firebasePayload['ownerApproved']}');
+    debugPrint('✅ Project created with ownerApprovedAt=${firebasePayload['ownerApprovedAt']}');
+    debugPrint('✅ Project created with managerAcceptedAt=${firebasePayload['managerAcceptedAt']}');
+    debugPrint('✅ Project created with status=${firebasePayload['status']}');
+    
+    final docRef = await _firestore.collection('projects').add(firebasePayload);
     return docRef.id;
   }
 
