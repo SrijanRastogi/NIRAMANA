@@ -176,6 +176,7 @@ class _PlotSummaryScreenState extends State<PlotSummaryScreen> {
                               plotLength: length,
                               plotWidth: width,
                               floors: widget.plotData['floors'] ?? 1,
+                              city: widget.plotData['city'], // Pass city for market pricing
                             ),
                           ),
                         );
@@ -586,6 +587,7 @@ class _AiConceptResultDialog extends StatelessWidget {
                               plotLength: result.buildingModel.plotLength,
                               plotWidth: result.buildingModel.plotWidth,
                               floors: result.buildingModel.floors,
+                              city: result.buildingModel.plotLength > 0 ? 'India' : null, // Default city
                               buildingModel: result.buildingModel,
                             ),
                           ),
